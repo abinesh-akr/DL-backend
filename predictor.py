@@ -33,5 +33,6 @@ def reconstruct_image():
     image_array = reconstructed[:, :, 0].tolist()
     return jsonify({'image': image_array})
 
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8000))  # Use Render's PORT env var or default to 8000
+    app.run(host='0.0.0.0', port=port)
