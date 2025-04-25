@@ -1,0 +1,213 @@
+<script type="text/javascript">
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function filledCell(cell) {
+      return cell !== '' && cell != null;
+    }
+    function loadFileData(filename) {
+      if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+        try {
+          var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+          var firstSheetName = workbook.SheetNames[0];
+          var worksheet = workbook.Sheets[firstSheetName];
+          var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+          var filteredData = jsonData.filter(row => row.some(filledCell));
+          var headerRowIndex = filteredData.findIndex((row, index) =>
+            row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+          );
+          if (headerRowIndex === -1 || headerRowIndex > 25) {
+            headerRowIndex = 0;
+          }
+          var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+          csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+          return csv;
+        } catch (e) {
+          console.error(e);
+          return "";
+        }
+      }
+      return gk_fileData[filename] || "";
+    }
+  </script>
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MNIST GAN & Autoencoder Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-900 text-white">
+    <div id="root"></div>
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+  
+      const App = () => {
+        const [image, setImage] = useState(null);
+        const [loading, setLoading] = useState(false);
+  
+        const generateImage = async () => {
+          setLoading(true);
+          try {
+            const response = await fetch('http://localhost:5000/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            setImage(data.image);
+          } catch (error) {
+            console.error('Error:', error);
+          }
+          setLoading(false);
+        };
+  
+        const reconstructImage = async () => {
+          setLoading(true);
+          try {
+            const response = await fetch('http://localhost:5000/reconstruct', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            setImage(data.image);
+          } catch (error) {
+            console.error('Error:', error);
+          }
+          setLoading(false);
+        };
+  
+        const saveImage = () => {
+          if (!image) return;
+          const canvas = document.createElement('canvas');
+          canvas.width = 280; // Save at scaled size
+          canvas.height = 280;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = false;
+          const imageData = ctx.createImageData(28, 28);
+          for (let i = 0; i < image.length; i++) {
+            for (let j = 0; j < image[i].length; j++) {
+              const idx = (i * 28 + j) * 4;
+              imageData.data[idx] = image[i][j];
+              imageData.data[idx + 1] = image[i][j];
+              imageData.data[idx + 2] = image[i][j];
+              imageData.data[idx + 3] = 255;
+            }
+          }
+          ctx.putImageData(imageData, 0, 0);
+          // Scale up to 280x280 for saving
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = 28;
+          tempCanvas.height = 28;
+          tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
+          ctx.drawImage(tempCanvas, 0, 0, 280, 280);
+          const link = document.createElement('a');
+          link.download = 'generated_image.png';
+          link.href = canvas.toDataURL();
+          link.click();
+        };
+  
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center p-4">
+            <h1 className="text-3xl font-bold mb-8">MNIST GAN & Autoencoder Demo</h1>
+            <div className="flex flex-col md:flex-row gap-8">
+              <div className="flex flex-col gap-4">
+                <button
+                  onClick={generateImage}
+                  disabled={loading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+                >
+                  Generate Image (GAN)
+                </button>
+                <button
+                  onClick={reconstructImage}
+                  disabled={loading}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+                >
+                  Reconstruct Image (AE)
+                </button>
+                <button
+                  onClick={saveImage}
+                  disabled={!image || loading}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+                >
+                  Save Image
+                </button>
+                {loading && <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>}
+              </div>
+              <div className="bg-gray-800 p-4 rounded-lg">
+                {image ? (
+                  <canvas
+                    ref={(canvas) => {
+                      if (canvas && image) {
+                        canvas.width = 28;
+                        canvas.height = 28;
+                        const ctx = canvas.getContext('2d');
+                        const imageData = ctx.createImageData(28, 28);
+                        for (let i = 0; i < image.length; i++) {
+                          for (let j = 0; j < image[i].length; j++) {
+                            const idx = (i * 28 + j) * 4;
+                            imageData.data[idx] = image[i][j];
+                            imageData.data[idx + 1] = image[i][j];
+                            imageData.data[idx + 2] = image[i][j];
+                            imageData.data[idx + 3] = 255;
+                          }
+                        }
+                        ctx.imageSmoothingEnabled = false;
+                        ctx.putImageData(imageData, 0, 0);
+                      }
+                    }}
+                    className="border border-gray-600"
+                    style={{ width: '280px', height: '280px' }} // 10x scaling
+                  />
+                ) : (
+                  <div className="w-[280px] h-[280px] bg-gray-700 flex items-center justify-center">
+                    No image generated
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      };
+  
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+    <script>
+      (function(){
+        function c(){
+          var b=a.contentDocument||a.contentWindow.document;
+          if(b){
+            var d=b.createElement('script');
+            d.innerHTML="window.__CF$cv$params={r:'935ac76bb9d37ba2',t:'MTc0NTU1MjAwNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";
+            b.getElementsByTagName('head')[0].appendChild(d)
+          }
+        }
+        if(document.body){
+          var a=document.createElement('iframe');
+          a.height=1;
+          a.width=1;
+          a.style.position='absolute';
+          a.style.top=0;
+          a.style.left=0;
+          a.style.border='none';
+          a.style.visibility='hidden';
+          document.body.appendChild(a);
+          if('loading'!==document.readyState)c();
+          else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);
+          else{
+            var e=document.onreadystatechange||function(){};
+            document.onreadystatechange=function(b){
+              e(b);
+              'loading'!==document.readyState&&(document.onreadystatechange=e,c())
+            }
+          }
+        }
+      })();
+    </script>
+  </body>
+  </html>
